@@ -45,6 +45,8 @@ struct TrellisNode {
     int score;
 };
 
+static const int prores_auto_rate_penalty_bits = 64;
+
 typedef struct ProresThreadData {
     DECLARE_ALIGNED(16, int16_t, blocks)[MAX_PLANES][64 * 4 * MAX_MBS_PER_SLICE];
     DECLARE_ALIGNED(16, uint16_t, emu_buf)[16 * 16];
@@ -688,6 +690,8 @@ static int find_slice_quant(AVCodecContext *avctx,
             cur = trellis_node + q;
             bits  = td->nodes[prev].bits + slice_bits[q];
             error = slice_score[q];
+            if (error < SCORE_LIMIT)
+                error += slice_bits[q] / prores_auto_rate_penalty_bits;
             if (bits > bits_limit)
                 error = SCORE_LIMIT;
 
