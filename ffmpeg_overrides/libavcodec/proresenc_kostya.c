@@ -98,7 +98,7 @@ static int prores_profile_steep_trigger_divisor(const ProresContext *ctx)
 static int prores_profile_rate_penalty_bits(const ProresContext *ctx)
 {
     if (ctx->profile == PRORES_PROFILE_PROXY)
-        return 20;
+        return 16;
     if (ctx->profile == PRORES_PROFILE_LT)
         return 40;
     if (ctx->profile == PRORES_PROFILE_STANDARD)
