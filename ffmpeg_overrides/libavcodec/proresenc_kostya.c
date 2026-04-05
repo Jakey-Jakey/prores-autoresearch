@@ -49,6 +49,20 @@ static const int prores_auto_rate_penalty_bits = 64;
 static const int prores_auto_budget_headroom_divisor = 4;
 static const int prores_auto_budget_penalty_bits = 4;
 
+static int prores_profile_budget_headroom_divisor(const ProresContext *ctx)
+{
+    if (ctx->profile == PRORES_PROFILE_LT || ctx->profile == PRORES_PROFILE_STANDARD)
+        return 3;
+    return prores_auto_budget_headroom_divisor;
+}
+
+static int prores_profile_budget_penalty_bits(const ProresContext *ctx)
+{
+    if (ctx->profile == PRORES_PROFILE_LT || ctx->profile == PRORES_PROFILE_STANDARD)
+        return 3;
+    return prores_auto_budget_penalty_bits;
+}
+
 typedef struct ProresThreadData {
     DECLARE_ALIGNED(16, int16_t, blocks)[MAX_PLANES][64 * 4 * MAX_MBS_PER_SLICE];
     DECLARE_ALIGNED(16, uint16_t, emu_buf)[16 * 16];
@@ -710,6 +724,8 @@ static int find_slice_quant(AVCodecContext *avctx,
 
         for (q = min_quant; q < max_quant + 2; q++) {
             int remaining_budget;
+            int budget_penalty_bits;
+            int headroom_divisor;
             int slice_budget;
             int soft_limit;
             cur = trellis_node + q;
@@ -718,12 +734,14 @@ static int find_slice_quant(AVCodecContext *avctx,
             if (error < SCORE_LIMIT)
                 error += slice_bits[q] / prores_auto_rate_penalty_bits;
             if (error < SCORE_LIMIT) {
+                budget_penalty_bits = prores_profile_budget_penalty_bits(ctx);
+                headroom_divisor = prores_profile_budget_headroom_divisor(ctx);
                 slice_budget = ctx->bits_per_mb * mbs_per_slice;
                 remaining_budget = (ctx->mb_width - mbs) * ctx->bits_per_mb;
                 soft_limit = bits_limit - FFMIN(slice_budget / 2,
-                                                remaining_budget / prores_auto_budget_headroom_divisor);
+                                                remaining_budget / headroom_divisor);
                 if (bits > soft_limit)
-                    error += (bits - soft_limit) / prores_auto_budget_penalty_bits;
+                    error += (bits - soft_limit) / budget_penalty_bits;
             }
             if (bits > bits_limit)
                 error = SCORE_LIMIT;
