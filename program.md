@@ -17,7 +17,7 @@ Read this file and the project docs before starting experiments.
 4. Read `experiments/current/eval.log` and `experiments/current/metrics.json`.
 5. If `composite_score` improves, keep the edit and commit it.
 6. If it does not improve, restore the mutable file with `git restore encoder_params.py`.
-7. Append a row to `results.tsv`.
+7. Append a row to `results.tsv` with `python3 append_results.py --description "..." --status keep|discard|crash`.
 8. Continue.
 
 ## Revert Policy
