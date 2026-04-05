@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+experiments/
+ffmpeg_source/
+reference_encodes/
+results.tsv
+test_clips/

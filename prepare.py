@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import urllib.request
+from pathlib import Path
+
+from projectlib import (
+    ENCODER_PARAMS_PATH,
+    FFMPEG_EXPECTED_COMMIT,
+    FFMPEG_REMOTE,
+    FFMPEG_SOURCE_DIR,
+    FFMPEG_TAG,
+    META_DIR,
+    PATCH_BASES_DIR,
+    PHASE1_PROFILES,
+    REFERENCE_DIR,
+    RESULTS_TSV,
+    TEST_CLIPS_DIR,
+    candidate_paths,
+    ensure_dirs,
+    find_command,
+    list_test_clips,
+    maybe_write_text,
+    parse_source_baseline,
+    reference_path,
+    render_encoder_params,
+    run,
+    write_environment_json,
+    write_text,
+)
+
+
+REAL_WORLD_SOURCES = [
+    {
+        "name": "sintel",
+        "url": "https://download.blender.org/durian/trailer/sintel_trailer-1080p.mp4",
+        "license_note": "Blender Foundation Sintel trailer, CC BY 3.0.",
+    },
+    {
+        "name": "big_buck_bunny",
+        "url": "https://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_1080p_h264.mov",
+        "license_note": "Blender Foundation Big Buck Bunny sample, CC BY 3.0.",
+    },
+]
+
+
+def verify_commands() -> None:
+    for command in ["ffmpeg", "ffprobe", "git", "python3", "clang", "make"]:
+        find_command(command)
+    encoders = run(["ffmpeg", "-hide_banner", "-encoders"]).stdout
+    if "prores_videotoolbox" not in encoders:
+        raise SystemExit("Blocked: system ffmpeg does not expose prores_videotoolbox")
+
+
+def ensure_ffmpeg_source() -> None:
+    if not FFMPEG_SOURCE_DIR.exists():
+        run(["git", "clone", "--depth", "1", "--branch", FFMPEG_TAG, FFMPEG_REMOTE, str(FFMPEG_SOURCE_DIR)])
+    commit = run(["git", "-C", str(FFMPEG_SOURCE_DIR), "rev-parse", "HEAD"]).stdout.strip()
+    if commit != FFMPEG_EXPECTED_COMMIT:
+        raise SystemExit(f"Blocked: ffmpeg_source is at {commit}, expected {FFMPEG_EXPECTED_COMMIT}")
+    write_text(META_DIR / "ffmpeg_commit.txt", commit + "\n")
+
+
+def snapshot_patch_bases() -> None:
+    paths = candidate_paths()
+    for source_key, dest_key in [("common", "common_orig"), ("kostya", "kostya_orig")]:
+        source = paths[source_key]
+        dest = paths[dest_key]
+        if not dest.exists():
+            dest.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def extract_baseline_encoder_params() -> None:
+    if ENCODER_PARAMS_PATH.exists():
+        return
+    common_orig = candidate_paths()["common_orig"]
+    baseline = parse_source_baseline(common_orig.read_text(encoding="utf-8"))
+    write_text(ENCODER_PARAMS_PATH, render_encoder_params(baseline["baseline_encoder_params"]))
+
+
+def make_gradient_clip(output_path: Path) -> None:
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "nullsrc=s=1920x1080:r=24000/1001,geq=lum='X/W*1023':cb='Y/H*1023':cr='(X+Y)/(W+H)*1023'",
+            "-t",
+            "2",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv422p10le",
+            str(output_path),
+        ]
+    )
+
+
+def make_detail_clip(output_path: Path) -> None:
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "mandelbrot=s=1920x1080:r=24000/1001",
+            "-t",
+            "2",
+            "-c:v",
+            "ffv1",
+            "-vf",
+            "format=yuv422p10le",
+            str(output_path),
+        ]
+    )
+
+
+def make_motion_clip(output_path: Path) -> None:
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=1920x1080:r=24000/1001",
+            "-t",
+            "2",
+            "-c:v",
+            "ffv1",
+            "-vf",
+            "format=yuv422p10le",
+            str(output_path),
+        ]
+    )
+
+
+def make_bars_clip(output_path: Path) -> None:
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "smptehdbars=s=1920x1080:r=24000/1001",
+            "-t",
+            "2",
+            "-c:v",
+            "ffv1",
+            "-vf",
+            "format=yuv422p10le",
+            str(output_path),
+        ]
+    )
+
+
+def download_real_world_source(download_dir: Path) -> tuple[Path | None, str]:
+    download_dir.mkdir(parents=True, exist_ok=True)
+    for source in REAL_WORLD_SOURCES:
+        destination = download_dir / Path(source["url"]).name
+        if not destination.exists():
+            try:
+                with urllib.request.urlopen(source["url"], timeout=30) as response:
+                    destination.write_bytes(response.read())
+            except Exception:
+                continue
+        if destination.exists() and destination.stat().st_size > 0:
+            return destination, source["license_note"]
+    return None, "No real-world clip downloaded. Network fetch failed."
+
+
+def make_real_world_clip(output_path: Path) -> str:
+    download_dir = TEST_CLIPS_DIR / "_downloads"
+    source_path, note = download_real_world_source(download_dir)
+    if source_path is None:
+        return note
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            "00:00:05.0",
+            "-t",
+            "2.0",
+            "-i",
+            str(source_path),
+            "-c:v",
+            "ffv1",
+            "-vf",
+            "fps=24000/1001,scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,format=yuv422p10le",
+            str(output_path),
+        ]
+    )
+    return note
+
+
+def generate_test_clips() -> str:
+    clip_builders = {
+        "gradient.mkv": make_gradient_clip,
+        "detail.mkv": make_detail_clip,
+        "motion.mkv": make_motion_clip,
+        "bars.mkv": make_bars_clip,
+    }
+    for filename, builder in clip_builders.items():
+        output_path = TEST_CLIPS_DIR / filename
+        if not output_path.exists():
+            builder(output_path)
+    real_world_output = TEST_CLIPS_DIR / "realworld.mkv"
+    if real_world_output.exists():
+        return "Real-world clip already present."
+    return make_real_world_clip(real_world_output)
+
+
+def generate_reference_encodes() -> None:
+    for clip_path in list_test_clips():
+        clip_name = clip_path.stem
+        for profile in PHASE1_PROFILES:
+            output_path = reference_path(clip_name, profile)
+            if output_path.exists():
+                continue
+            run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(clip_path),
+                    "-c:v",
+                    "prores_videotoolbox",
+                    "-profile:v",
+                    profile,
+                    str(output_path),
+                ]
+            )
+
+
+def initialize_results_tsv() -> None:
+    maybe_write_text(
+        RESULTS_TSV,
+        "commit\ttimestamp\tdescription\tssim_avg\tpsnr_avg\tvideo_bytes_ratio_avg\tcomposite_score\tstatus\n",
+    )
+
+
+def write_source_notes(real_world_note: str) -> None:
+    notes = {
+        "verified_layout": [
+            "Phase 1 patch target is libavcodec/proresenc_kostya_common.c.",
+            "Current FFmpeg n8.1 stores prores_quant_matrices, prores_mb_limits, and prores_profile_info in that file.",
+            "Proxy already has a separate chroma matrix.",
+            "bits_per_mb and mbs_per_slice are runtime options in proresenc_kostya.c and remain runtime knobs here.",
+            "The ProRes scan/codebook tables live in libavcodec/proresdata.c and are excluded from phase 1 search.",
+            "Current 4444XQ still points at QUANT_MAT_HQ in upstream n8.1, matching source rather than the older draft assumption.",
+        ],
+        "real_world_clip": real_world_note,
+    }
+    write_text(META_DIR / "source_notes.md", "# Source Notes\n\n" + json.dumps(notes, indent=2) + "\n")
+
+
+def main() -> None:
+    ensure_dirs()
+    verify_commands()
+    ensure_ffmpeg_source()
+    snapshot_patch_bases()
+    extract_baseline_encoder_params()
+    real_world_note = generate_test_clips()
+    generate_reference_encodes()
+    write_environment_json()
+    write_source_notes(real_world_note)
+    initialize_results_tsv()
+    print("prepare.py completed successfully")
+
+
+if __name__ == "__main__":
+    main()
