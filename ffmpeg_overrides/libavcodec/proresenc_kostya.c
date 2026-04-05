@@ -709,6 +709,7 @@ static int find_slice_quant(AVCodecContext *avctx,
         prev = trellis_node - TRELLIS_WIDTH + pq;
 
         for (q = min_quant; q < max_quant + 2; q++) {
+            int remaining_budget;
             int slice_budget;
             int soft_limit;
             cur = trellis_node + q;
@@ -718,7 +719,9 @@ static int find_slice_quant(AVCodecContext *avctx,
                 error += slice_bits[q] / prores_auto_rate_penalty_bits;
             if (error < SCORE_LIMIT) {
                 slice_budget = ctx->bits_per_mb * mbs_per_slice;
-                soft_limit = bits_limit - slice_budget / prores_auto_budget_headroom_divisor;
+                remaining_budget = (ctx->mb_width - mbs) * ctx->bits_per_mb;
+                soft_limit = bits_limit - FFMIN(slice_budget / 2,
+                                                remaining_budget / prores_auto_budget_headroom_divisor);
                 if (bits > soft_limit)
                     error += (bits - soft_limit) / prores_auto_budget_penalty_bits;
             }
