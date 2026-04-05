@@ -12,6 +12,12 @@ The fixed infrastructure lives in:
 - `discard_experiment.py` for safely logging and reverting a losing or crashed experiment
 
 The only file intended for routine experimental edits is `encoder_params.py`.
+It now includes:
+
+- per-profile matrices, quant ranges, and `br_tab`
+- per-profile `CHROMA_QUANT_SCALE`
+- global `SEARCH_TUNING` knobs for luma/chroma error weighting, overquant penalty, and AC deadzone
+- `RUNTIME_DEFAULTS` for runtime encoder options
 
 ## Quick start
 

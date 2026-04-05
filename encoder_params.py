@@ -105,6 +105,20 @@ PROFILES = {
     },
 }
 
+CHROMA_QUANT_SCALE = {
+    "proxy": 100,
+    "lt": 100,
+    "standard": 100,
+    "hq": 100,
+}
+
+SEARCH_TUNING = {
+    "luma_error_weight_percent": 100,
+    "chroma_error_weight_percent": 100,
+    "overquant_penalty": 0,
+    "ac_deadzone_percent": 0,
+}
+
 RUNTIME_DEFAULTS = {
     "mbs_per_slice": 8,
     "bits_per_mb_override": None,
