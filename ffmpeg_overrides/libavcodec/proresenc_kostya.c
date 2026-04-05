@@ -572,6 +572,8 @@ static int find_slice_quant(AVCodecContext *avctx,
     int mbs, prev, cur, new_score;
     int slice_bits[TRELLIS_WIDTH], slice_score[TRELLIS_WIDTH];
     int overquant;
+    int best_overquant, best_overquant_bits, best_overquant_error;
+    int best_overquant_score;
     uint16_t *qmat;
     uint16_t *qmat_chroma;
     int linesize[4], line_add;
@@ -648,7 +650,10 @@ static int find_slice_quant(AVCodecContext *avctx,
         slice_score[max_quant + 1] = slice_score[max_quant] + 1;
         overquant = max_quant;
     } else {
+        best_overquant = -1;
+        best_overquant_score = SCORE_LIMIT;
         for (q = max_quant + 1; q < 128; q++) {
+            int overquant_score;
             bits  = alpha_bits;
             error = 0;
             if (q < MAX_STORED_Q) {
@@ -674,8 +679,23 @@ static int find_slice_quant(AVCodecContext *avctx,
                                              num_cblocks[i],
                                              qmat_chroma, td);
             }
-            if (bits <= ctx->bits_per_mb * mbs_per_slice)
+            if (bits > ctx->bits_per_mb * mbs_per_slice)
+                continue;
+
+            overquant_score = error + bits / prores_auto_rate_penalty_bits;
+            if (best_overquant == -1 || overquant_score <= best_overquant_score) {
+                best_overquant = q;
+                best_overquant_bits = bits;
+                best_overquant_error = error;
+                best_overquant_score = overquant_score;
+            }
+            if (q > best_overquant)
                 break;
+        }
+        if (best_overquant != -1) {
+            q = best_overquant;
+            bits = best_overquant_bits;
+            error = best_overquant_error;
         }
 
         slice_bits[max_quant + 1]  = bits;
