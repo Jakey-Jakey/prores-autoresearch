@@ -32,8 +32,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def git_porcelain() -> list[str]:
-    output = run(["git", "status", "--short"], cwd=ROOT).stdout.strip()
-    return [line for line in output.splitlines() if line.strip()]
+    output = run(["git", "status", "--short"], cwd=ROOT).stdout
+    return [line.rstrip("\n") for line in output.splitlines() if line.strip()]
 
 
 def only_encoder_params_changed(lines: list[str]) -> bool:
