@@ -12,20 +12,20 @@ from projectlib import (
     FFMPEG_SOURCE_DIR,
     FFMPEG_TAG,
     META_DIR,
-    PATCH_BASES_DIR,
     PHASE1_PROFILES,
-    REFERENCE_DIR,
     RESULTS_TSV,
-    TEST_CLIPS_DIR,
     candidate_paths,
     ensure_dirs,
+    ensure_results_v2,
     find_command,
     list_test_clips,
+    load_phase2_policy,
     maybe_write_text,
     parse_source_baseline,
     reference_path,
     render_encoder_params,
     run,
+    TEST_CLIPS_DIR,
     write_environment_json,
     write_text,
 )
@@ -52,6 +52,8 @@ REAL_WORLD_SOURCES = [
 LOCAL_REAL_WORLD_CANDIDATES = [
     Path("~/Downloads/tears_of_steel_1080p.mov"),
     Path("~/Downloads/Tears_of_Steel_1080p.mov"),
+    Path("../prores-autoresearch/test_clips/_downloads/tears_of_steel_1080p.mov"),
+    Path("../prores-autoresearch-agent/test_clips/_downloads/tears_of_steel_1080p.mov"),
 ]
 
 REAL_WORLD_CLIP_SPECS = [
@@ -79,11 +81,26 @@ def ensure_ffmpeg_source() -> None:
 
 def snapshot_patch_bases() -> None:
     paths = candidate_paths()
-    for source_key, dest_key in [("common", "common_orig"), ("kostya", "kostya_orig")]:
+    for source_key, dest_key in [
+        ("common", "common_orig"),
+        ("kostya", "kostya_orig"),
+        ("common_h", "common_h_orig"),
+        ("proresdata", "proresdata_orig"),
+    ]:
         source = paths[source_key]
         dest = paths[dest_key]
         if not dest.exists():
             dest.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def seed_override_files() -> None:
+    paths = candidate_paths()
+    for key in ["common", "kostya", "common_h", "proresdata"]:
+        override_path = paths[f"{key}_override"]
+        source_path = paths[f"{key}_orig"]
+        if not override_path.exists():
+            override_path.parent.mkdir(parents=True, exist_ok=True)
+            override_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
 
 
 def extract_baseline_encoder_params() -> None:
@@ -219,12 +236,14 @@ def make_real_world_clip(output_path: Path, source_path: Path, start_time: str) 
 
 
 def generate_real_world_clips() -> str:
+    policy = load_phase2_policy()
     download_dir = TEST_CLIPS_DIR / "_downloads"
     source_path, note = download_real_world_source(download_dir)
     if source_path is None:
         return note
     created = []
-    for filename, start_time in REAL_WORLD_CLIP_SPECS:
+    holdout_specs = [(item["filename"], item["start_time"]) for item in policy["HOLDOUT_GENERATION_SPECS"]]
+    for filename, start_time in [*REAL_WORLD_CLIP_SPECS, *holdout_specs]:
         output_path = TEST_CLIPS_DIR / filename
         if not output_path.exists():
             make_real_world_clip(output_path, source_path, start_time)
@@ -247,25 +266,30 @@ def generate_test_clips() -> str:
 
 
 def generate_reference_encodes() -> None:
-    for clip_path in list_test_clips():
-        clip_name = clip_path.stem
-        for profile in PHASE1_PROFILES:
-            output_path = reference_path(clip_name, profile)
-            if output_path.exists():
-                continue
-            run(
-                [
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    str(clip_path),
-                    "-c:v",
-                    "prores_videotoolbox",
-                    "-profile:v",
-                    profile,
-                    str(output_path),
-                ]
-            )
+    policy = load_phase2_policy()
+    for pack in [policy["DEVELOPMENT_PACK"], policy["HOLDOUT_PACK"]]:
+        for clip_path in list_test_clips(pack):
+            if not clip_path.exists():
+                raise SystemExit(f"Missing clip required for pack '{pack}': {clip_path}")
+            clip_name = clip_path.stem
+            for profile in PHASE1_PROFILES:
+                output_path = reference_path(clip_name, profile, pack)
+                if output_path.exists():
+                    continue
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(clip_path),
+                        "-c:v",
+                        "prores_videotoolbox",
+                        "-profile:v",
+                        profile,
+                        str(output_path),
+                    ]
+                )
 
 
 def initialize_results_tsv() -> None:
@@ -288,12 +312,14 @@ def write_source_notes(real_world_note: str) -> None:
             "- `bits_per_mb` and `mbs_per_slice` are runtime options in `libavcodec/proresenc_kostya.c`, so this harness keeps them as runtime knobs.",
             "- The scan and entropy codebook tables live in `libavcodec/proresdata.c` and are intentionally out of scope for phase 1.",
             "- Current `4444XQ` still points at `QUANT_MAT_HQ` in upstream `n8.1`, so the setup follows source truth rather than the older draft assumption.",
+            "- Phase 2 tracks editable codec templates in `ffmpeg_overrides/libavcodec/` and rebuilds from upstream snapshots plus those tracked overrides.",
             "",
             "## Test Material",
             "",
             "- The harness uses FFV1-in-Matroska mezzanine clips because the preferred Y4M path was not reliable with Homebrew FFmpeg for 10-bit 4:2:2 round-tripping.",
-            "- Synthetic clips: `bars`, `detail`, `gradient`, and `motion`.",
-            f"- Real-world clips: {real_world_note}",
+            "- Development clips: `bars`, `detail`, `gradient`, `motion`, `realworld_tos_dialogue`, and `realworld_tos_action`.",
+            "- Holdout clips: `realworld_tos_holdout_opening` @ `00:00:47.0` and `realworld_tos_holdout_midaction` @ `00:04:42.0`.",
+            f"- Real-world source notes: {real_world_note}",
             "",
         ]
     )
@@ -305,12 +331,14 @@ def main() -> None:
     verify_commands()
     ensure_ffmpeg_source()
     snapshot_patch_bases()
+    seed_override_files()
     extract_baseline_encoder_params()
     real_world_note = generate_test_clips()
     generate_reference_encodes()
     write_environment_json()
     write_source_notes(real_world_note)
     initialize_results_tsv()
+    ensure_results_v2()
     print("prepare.py completed successfully")
 
 

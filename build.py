@@ -7,6 +7,7 @@ from pathlib import Path
 from projectlib import (
     ENCODER_PARAMS_PATH,
     FFMPEG_SOURCE_DIR,
+    DIRECT_OVERRIDE_KEYS,
     candidate_paths,
     load_encoder_params,
     patch_kostya_source,
@@ -29,21 +30,23 @@ CONFIGURE_FLAGS = [
 
 def restore_patch_targets() -> None:
     paths = candidate_paths()
-    paths["common"].write_text(paths["common_orig"].read_text(encoding="utf-8"), encoding="utf-8")
-    paths["kostya"].write_text(paths["kostya_orig"].read_text(encoding="utf-8"), encoding="utf-8")
+    for key in ["common", "kostya", "common_h", "proresdata"]:
+        paths[key].write_text(paths[f"{key}_orig"].read_text(encoding="utf-8"), encoding="utf-8")
 
 
 def patch_sources() -> None:
     params = load_encoder_params()
     validate_params(params)
     paths = candidate_paths()
-    base_text = paths["common_orig"].read_text(encoding="utf-8")
+    base_text = paths["common_override"].read_text(encoding="utf-8")
     baseline = parse_source_baseline(base_text)
     patched_text = patch_common_source(base_text, params, baseline)
     paths["common"].write_text(patched_text, encoding="utf-8")
-    kostya_base_text = paths["kostya_orig"].read_text(encoding="utf-8")
+    kostya_base_text = paths["kostya_override"].read_text(encoding="utf-8")
     patched_kostya_text = patch_kostya_source(kostya_base_text, params)
     paths["kostya"].write_text(patched_kostya_text, encoding="utf-8")
+    for key in DIRECT_OVERRIDE_KEYS:
+        paths[key].write_text(paths[f"{key}_override"].read_text(encoding="utf-8"), encoding="utf-8")
 
 
 def ensure_configure() -> None:

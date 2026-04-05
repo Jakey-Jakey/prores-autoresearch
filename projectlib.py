@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import importlib.util
 import json
 import math
@@ -20,9 +21,14 @@ PATCH_BASES_DIR = ROOT / "patch_bases"
 TEST_CLIPS_DIR = ROOT / "test_clips"
 REFERENCE_DIR = ROOT / "reference_encodes"
 EXPERIMENTS_DIR = ROOT / "experiments"
+EXPERIMENT_HISTORY_DIR = EXPERIMENTS_DIR / "history"
 FFMPEG_SOURCE_DIR = ROOT / "ffmpeg_source"
 RESULTS_TSV = ROOT / "results.tsv"
+RESULTS_V2_TSV = ROOT / "results_v2.tsv"
 ENCODER_PARAMS_PATH = ROOT / "encoder_params.py"
+PHASE2_POLICY_PATH = ROOT / "phase2_policy.py"
+FFMPEG_OVERRIDES_DIR = ROOT / "ffmpeg_overrides"
+FFMPEG_OVERRIDES_CODEC_DIR = FFMPEG_OVERRIDES_DIR / "libavcodec"
 
 FFMPEG_REMOTE = "https://github.com/FFmpeg/FFmpeg.git"
 FFMPEG_TAG = "n8.1"
@@ -54,6 +60,14 @@ SEARCH_TUNING_DEFAULTS = {
     "ac_deadzone_percent": 0,
 }
 CHROMA_QUANT_SCALE_DEFAULTS = {profile: 100 for profile in PHASE1_PROFILES}
+PARAMETERIZED_OVERRIDE_KEYS = ["common", "kostya"]
+DIRECT_OVERRIDE_KEYS = ["common_h", "proresdata"]
+OVERRIDE_FILE_NAMES = {
+    "common": "proresenc_kostya_common.c",
+    "kostya": "proresenc_kostya.c",
+    "common_h": "proresenc_kostya_common.h",
+    "proresdata": "proresdata.c",
+}
 
 MATRIX_LABELS = [
     "proxy",
@@ -80,7 +94,15 @@ class CommandResult:
 
 
 def ensure_dirs() -> None:
-    for path in [META_DIR, PATCH_BASES_DIR, TEST_CLIPS_DIR, REFERENCE_DIR, EXPERIMENTS_DIR]:
+    for path in [
+        META_DIR,
+        PATCH_BASES_DIR,
+        TEST_CLIPS_DIR,
+        REFERENCE_DIR,
+        EXPERIMENTS_DIR,
+        EXPERIMENT_HISTORY_DIR,
+        FFMPEG_OVERRIDES_CODEC_DIR,
+    ]:
         path.mkdir(parents=True, exist_ok=True)
 
 
@@ -88,8 +110,16 @@ def candidate_paths() -> dict[str, Path]:
     return {
         "common": FFMPEG_SOURCE_DIR / "libavcodec" / "proresenc_kostya_common.c",
         "kostya": FFMPEG_SOURCE_DIR / "libavcodec" / "proresenc_kostya.c",
+        "common_h": FFMPEG_SOURCE_DIR / "libavcodec" / "proresenc_kostya_common.h",
+        "proresdata": FFMPEG_SOURCE_DIR / "libavcodec" / "proresdata.c",
         "common_orig": PATCH_BASES_DIR / "proresenc_kostya_common.c.orig",
         "kostya_orig": PATCH_BASES_DIR / "proresenc_kostya.c.orig",
+        "common_h_orig": PATCH_BASES_DIR / "proresenc_kostya_common.h.orig",
+        "proresdata_orig": PATCH_BASES_DIR / "proresdata.c.orig",
+        "common_override": FFMPEG_OVERRIDES_CODEC_DIR / "proresenc_kostya_common.c",
+        "kostya_override": FFMPEG_OVERRIDES_CODEC_DIR / "proresenc_kostya.c",
+        "common_h_override": FFMPEG_OVERRIDES_CODEC_DIR / "proresenc_kostya_common.h",
+        "proresdata_override": FFMPEG_OVERRIDES_CODEC_DIR / "proresdata.c",
     }
 
 
@@ -172,6 +202,71 @@ def load_encoder_params() -> dict[str, Any]:
         "SEARCH_TUNING": search_tuning,
         "RUNTIME_DEFAULTS": getattr(module, "RUNTIME_DEFAULTS"),
     }
+
+
+def load_phase2_policy() -> dict[str, Any]:
+    spec = importlib.util.spec_from_file_location("phase2_policy", PHASE2_POLICY_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to import {PHASE2_POLICY_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    policy = {
+        "SCORE_VERSION": getattr(module, "SCORE_VERSION"),
+        "DEVELOPMENT_PACK": getattr(module, "DEVELOPMENT_PACK"),
+        "HOLDOUT_PACK": getattr(module, "HOLDOUT_PACK"),
+        "CLIP_PACKS": getattr(module, "CLIP_PACKS"),
+        "HOLDOUT_GENERATION_SPECS": getattr(module, "HOLDOUT_GENERATION_SPECS"),
+        "SCORE_WEIGHTS": getattr(module, "SCORE_WEIGHTS"),
+        "GATES": getattr(module, "GATES"),
+        "ALLOWED_PROJECT_FILES": getattr(module, "ALLOWED_PROJECT_FILES"),
+        "ALLOWED_OVERRIDE_FILES": getattr(module, "ALLOWED_OVERRIDE_FILES"),
+    }
+    validate_phase2_policy(policy)
+    return policy
+
+
+def validate_phase2_policy(policy: dict[str, Any]) -> None:
+    if not isinstance(policy.get("SCORE_VERSION"), str) or not policy["SCORE_VERSION"]:
+        raise ValueError("SCORE_VERSION must be a non-empty string")
+    for key in ["DEVELOPMENT_PACK", "HOLDOUT_PACK"]:
+        value = policy.get(key)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"{key} must be a non-empty string")
+    clip_packs = policy.get("CLIP_PACKS")
+    if not isinstance(clip_packs, dict):
+        raise ValueError("CLIP_PACKS must be a dictionary")
+    for pack_name in [policy["DEVELOPMENT_PACK"], policy["HOLDOUT_PACK"]]:
+        pack = clip_packs.get(pack_name)
+        if not isinstance(pack, list) or not pack or any(not isinstance(item, str) for item in pack):
+            raise ValueError(f"CLIP_PACKS['{pack_name}'] must be a non-empty list of clip filenames")
+    holdout_specs = policy.get("HOLDOUT_GENERATION_SPECS")
+    if not isinstance(holdout_specs, list) or not holdout_specs:
+        raise ValueError("HOLDOUT_GENERATION_SPECS must be a non-empty list")
+    for spec in holdout_specs:
+        if not isinstance(spec, dict):
+            raise ValueError("Each HOLDOUT_GENERATION_SPECS entry must be a dictionary")
+        for field in ["filename", "start_time"]:
+            if not isinstance(spec.get(field), str) or not spec[field]:
+                raise ValueError(f"HOLDOUT_GENERATION_SPECS entries require non-empty '{field}'")
+    score_weights = policy.get("SCORE_WEIGHTS")
+    if not isinstance(score_weights, dict):
+        raise ValueError("SCORE_WEIGHTS must be a dictionary")
+    if set(score_weights.keys()) != {"development", "holdout"}:
+        raise ValueError("SCORE_WEIGHTS must contain development and holdout")
+    total_weight = float(score_weights["development"]) + float(score_weights["holdout"])
+    if not math.isclose(total_weight, 1.0, rel_tol=0.0, abs_tol=1e-9):
+        raise ValueError("SCORE_WEIGHTS must sum to 1.0")
+    gates = policy.get("GATES")
+    if not isinstance(gates, dict):
+        raise ValueError("GATES must be a dictionary")
+    for field in ["max_holdout_score_drop", "max_holdout_case_drop"]:
+        value = gates.get(field)
+        if not isinstance(value, (int, float)) or value < 0:
+            raise ValueError(f"GATES['{field}'] must be a non-negative number")
+    for field in ["ALLOWED_PROJECT_FILES", "ALLOWED_OVERRIDE_FILES"]:
+        value = policy.get(field)
+        if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
+            raise ValueError(f"{field} must be a list of non-empty strings")
 
 
 def validate_params(data: dict[str, Any]) -> None:
@@ -743,16 +838,99 @@ def write_environment_json() -> None:
     write_text(META_DIR / "environment.json", json.dumps(env, indent=2) + "\n")
 
 
-def list_test_clips() -> list[Path]:
-    return sorted(TEST_CLIPS_DIR.glob("*.mkv"))
+def phase2_allowed_paths() -> set[Path]:
+    policy = load_phase2_policy()
+    allowed = {ROOT / relative for relative in policy["ALLOWED_PROJECT_FILES"]}
+    allowed.update(ROOT / relative for relative in policy["ALLOWED_OVERRIDE_FILES"])
+    return allowed
 
 
-def reference_path(clip_name: str, profile: str) -> Path:
-    return REFERENCE_DIR / f"{clip_name}_{profile}_apple.mov"
+def list_test_clips(pack: str | None = None) -> list[Path]:
+    if pack is None:
+        return sorted(TEST_CLIPS_DIR.glob("*.mkv"))
+    policy = load_phase2_policy()
+    clip_names = policy["CLIP_PACKS"][pack]
+    return [TEST_CLIPS_DIR / name for name in clip_names]
 
 
-def candidate_path(experiment_dir: Path, clip_name: str, profile: str) -> Path:
-    return experiment_dir / "candidates" / f"{clip_name}_{profile}_candidate.mov"
+def reference_path(clip_name: str, profile: str, pack: str = "development") -> Path:
+    return REFERENCE_DIR / pack / f"{clip_name}_{profile}_apple.mov"
+
+
+def candidate_path(experiment_dir: Path, clip_name: str, profile: str, pack: str = "development") -> Path:
+    return experiment_dir / "candidates" / pack / f"{clip_name}_{profile}_candidate.mov"
+
+
+def archived_metrics_path(commit: str) -> Path:
+    return EXPERIMENT_HISTORY_DIR / f"{commit}_metrics.json"
+
+
+def archive_metrics(metrics_path: Path, commit: str) -> Path:
+    destination = archived_metrics_path(commit)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(metrics_path, destination)
+    return destination
+
+
+def results_v2_header() -> str:
+    return (
+        "commit\ttimestamp\tdescription\tscore_version\tdevelopment_score\tholdout_score\toverall_score\t"
+        "development_ssim_avg\tdevelopment_video_bytes_ratio_avg\tholdout_ssim_avg\t"
+        "holdout_video_bytes_ratio_avg\tchanged_files\tstatus\n"
+    )
+
+
+def ensure_results_v2() -> None:
+    maybe_write_text(RESULTS_V2_TSV, results_v2_header())
+
+
+def read_results_v2_rows() -> list[dict[str, Any]]:
+    if not RESULTS_V2_TSV.exists():
+        return []
+    with RESULTS_V2_TSV.open("r", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        rows = []
+        for row in reader:
+            if not row:
+                continue
+            parsed = dict(row)
+            for key in [
+                "development_score",
+                "holdout_score",
+                "overall_score",
+                "development_ssim_avg",
+                "development_video_bytes_ratio_avg",
+                "holdout_ssim_avg",
+                "holdout_video_bytes_ratio_avg",
+            ]:
+                parsed[key] = float(parsed[key])
+            rows.append(parsed)
+        return rows
+
+
+def latest_incumbent_row() -> dict[str, Any] | None:
+    incumbents = [row for row in read_results_v2_rows() if row["status"] in {"baseline", "keep"}]
+    return incumbents[-1] if incumbents else None
+
+
+def format_changed_files(paths: list[Path | str]) -> str:
+    items: list[str] = []
+    for path in paths:
+        if isinstance(path, Path):
+            try:
+                items.append(path.relative_to(ROOT).as_posix())
+            except ValueError:
+                items.append(path.as_posix())
+        else:
+            items.append(path)
+    normalized = sorted(set(items))
+    return ",".join(normalized) if normalized else "-"
+
+
+def overall_score(development_score: float, holdout_score: float) -> float:
+    policy = load_phase2_policy()
+    weights = policy["SCORE_WEIGHTS"]
+    return float(weights["development"]) * development_score + float(weights["holdout"]) * holdout_score
 
 
 def video_packet_bytes(path: Path, ffprobe_path: str) -> int:
