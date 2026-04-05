@@ -52,7 +52,7 @@ static const int prores_auto_budget_penalty_bits = 4;
 static int prores_profile_budget_headroom_divisor(const ProresContext *ctx)
 {
     if (ctx->profile == PRORES_PROFILE_LT || ctx->profile == PRORES_PROFILE_STANDARD)
-        return 3;
+        return 2;
     return prores_auto_budget_headroom_divisor;
 }
 
