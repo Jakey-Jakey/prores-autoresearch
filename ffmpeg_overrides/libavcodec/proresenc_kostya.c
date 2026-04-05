@@ -67,7 +67,7 @@ static int prores_profile_budget_penalty_bits(const ProresContext *ctx)
     if (ctx->profile == PRORES_PROFILE_STANDARD)
         return 2;
     if (ctx->profile == PRORES_PROFILE_PROXY)
-        return 2;
+        return 1;
     if (ctx->profile == PRORES_PROFILE_HQ)
         return 3;
     return prores_auto_budget_penalty_bits;
