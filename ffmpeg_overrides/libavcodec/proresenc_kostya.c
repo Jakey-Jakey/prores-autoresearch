@@ -742,8 +742,8 @@ static int find_slice_quant(AVCodecContext *avctx,
                                                 remaining_budget / headroom_divisor);
                 if (bits > soft_limit) {
                     error += (bits - soft_limit) / budget_penalty_bits;
-                    if (bits > soft_limit + slice_budget / 12)
-                        error += (bits - (soft_limit + slice_budget / 12)) / budget_penalty_bits;
+                    if (bits > soft_limit + slice_budget / 14)
+                        error += (bits - (soft_limit + slice_budget / 14)) / budget_penalty_bits;
                 }
             }
             if (bits > bits_limit)
