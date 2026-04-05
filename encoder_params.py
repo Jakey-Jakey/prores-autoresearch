@@ -100,7 +100,7 @@ PROFILES = {
             4, 4, 4, 4, 4, 4, 4, 4,
         ],
         "min_quant": 1,
-        "max_quant": 6,
+        "max_quant": 7,
         "br_tab": [1875, 1465, 1290, 1150],
     },
 }
