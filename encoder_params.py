@@ -51,7 +51,7 @@ PROFILES = {
         ],
         "min_quant": 1,
         "max_quant": 9,
-        "br_tab": [816, 639, 554, 503],
+        "br_tab": [840, 659, 570, 519],
     },
     "standard": {
         "luma_matrix": [
