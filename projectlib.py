@@ -564,10 +564,11 @@ def parse_ssim(stderr: str) -> float:
 
 
 def parse_psnr(stderr: str) -> float:
-    match = re.search(r"average:([0-9.]+)", stderr)
+    match = re.search(r"average:(inf|[0-9.]+)", stderr)
     if not match:
         raise ValueError(f"Unable to parse PSNR output:\n{stderr}")
-    return float(match.group(1))
+    value = match.group(1)
+    return float("inf") if value == "inf" else float(value)
 
 
 def composite_score(ssim_avg: float, video_bytes_ratio: float) -> float:
