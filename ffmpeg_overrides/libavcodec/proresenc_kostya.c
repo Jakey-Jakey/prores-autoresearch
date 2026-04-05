@@ -88,6 +88,8 @@ static int prores_profile_steep_trigger_divisor(const ProresContext *ctx)
 {
     if (ctx->profile == PRORES_PROFILE_LT)
         return 20;
+    if (ctx->profile == PRORES_PROFILE_STANDARD)
+        return 20;
     return 16;
 }
 
