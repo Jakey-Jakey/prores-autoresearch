@@ -15,17 +15,22 @@ Read this file and the project docs before starting experiments.
 2. Make one conceptual change in `encoder_params.py`.
 3. Run `bash run_experiment.sh`.
 4. Read `experiments/current/eval.log` and `experiments/current/metrics.json`.
-5. If `composite_score` improves, keep the edit and commit it.
-6. If it does not improve, restore the mutable file with `git restore encoder_params.py`.
-7. Append a row to `results.tsv` with `python3 append_results.py --description "..." --status keep|discard|crash`.
-   Use `baseline` only when intentionally establishing a new campaign baseline.
+5. If `composite_score` improves, run `python3 keep_experiment.py --description "..."`.
+6. If it does not improve, run `python3 discard_experiment.py --description "..." --status discard`.
+7. If the run crashes after a real attempt, run `python3 discard_experiment.py --description "..." --status crash`.
 8. Continue.
 
 ## Revert Policy
 
 - Never commit losing experiments.
-- Use `git restore encoder_params.py` for routine reverts.
+- Do not use raw `git restore encoder_params.py` during the normal loop; use `discard_experiment.py` so the result is logged before the file is restored.
 - Do not use destructive resets for normal loop control.
+
+## Workflow Helpers
+
+- `keep_experiment.py` makes the keep path atomic: it commits `encoder_params.py` first, then appends the results row with the real commit hash.
+- `discard_experiment.py` makes the discard path atomic: it logs the experiment result first, then restores `encoder_params.py` from `HEAD`.
+- `append_results.py` still exists as a low-level helper, but normal autonomous runs should prefer the keep/discard wrappers.
 
 ## Optimization Target
 
