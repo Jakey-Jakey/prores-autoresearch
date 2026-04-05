@@ -75,7 +75,7 @@ PROFILES = {
             7, 7, 9, 10, 11, 13, 16, 20,
         ],
         "min_quant": 1,
-        "max_quant": 6,
+        "max_quant": 7,
         "br_tab": [1324, 1027, 893, 813],
     },
     "hq": {
