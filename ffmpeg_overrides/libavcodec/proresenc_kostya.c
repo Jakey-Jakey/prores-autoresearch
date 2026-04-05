@@ -47,7 +47,7 @@ struct TrellisNode {
 
 static const int prores_auto_rate_penalty_bits = 64;
 static const int prores_auto_budget_headroom_divisor = 4;
-static const int prores_auto_budget_penalty_bits = 16;
+static const int prores_auto_budget_penalty_bits = 12;
 
 typedef struct ProresThreadData {
     DECLARE_ALIGNED(16, int16_t, blocks)[MAX_PLANES][64 * 4 * MAX_MBS_PER_SLICE];
