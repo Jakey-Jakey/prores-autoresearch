@@ -737,7 +737,7 @@ static int find_slice_quant(AVCodecContext *avctx,
             if (error < SCORE_LIMIT) {
                 budget_penalty_bits = prores_profile_budget_penalty_bits(ctx);
                 headroom_divisor = prores_profile_budget_headroom_divisor(ctx);
-                steep_penalty_bits = FFMAX(budget_penalty_bits - 2, 1);
+                steep_penalty_bits = FFMAX(budget_penalty_bits - 3, 1);
                 slice_budget = ctx->bits_per_mb * mbs_per_slice;
                 remaining_budget = (ctx->mb_width - mbs) * ctx->bits_per_mb;
                 soft_limit = bits_limit - FFMIN(slice_budget / 2,
