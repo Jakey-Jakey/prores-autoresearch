@@ -11,19 +11,12 @@
 
 ## Test Material
 
-- The current setup produced 4 synthetic 1920x1080, 24000/1001, progressive, `yuv422p10le` mezzanine clips: `bars`, `detail`, `gradient`, and `motion`.
-- The preferred Y4M path was not reliable with Homebrew FFmpeg for 10-bit 4:2:2 round-tripping, so the harness uses FFV1-in-Matroska mezzanine clips instead.
-- Real-world clip download failed during setup, so phase 1 is currently running on synthetic clips only.
-
-## Sanity Checks
-
-- Apple repeatability check on `bars` + `proxy`: byte-identical across two independent `prores_videotoolbox` encodes, SSIM `1.0`, PSNR `inf`, video packet byte ratio `1.0`.
-- Apple reference self-check: SSIM `1.0`, PSNR `inf`, video packet byte ratio `1.0`.
-- Candidate self-check: SSIM `1.0`, PSNR `inf`, video packet byte ratio `1.0`.
-- Cross-encoder sensitivity check on `bars` + `proxy`: SSIM `0.992636`, PSNR `32.608694`, byte ratio `1.045919`, not byte-identical.
-- Parameter sensitivity check: changing the first `proxy` luma matrix entry from `4` to `5` moved the global composite score from `0.920007` to `0.920523`, confirming the harness responds to `encoder_params.py`.
+- The harness uses FFV1-in-Matroska mezzanine clips because the preferred Y4M path was not reliable with Homebrew FFmpeg for 10-bit 4:2:2 round-tripping.
+- Synthetic clips: `bars`, `detail`, `gradient`, and `motion`.
+- Real-world clip source policy: prefer the official Blender `Tears of Steel` download and fall back to a local copy only if the fetch fails.
+- Real-world clips: `realworld_tos_dialogue.mkv` @ `00:02:10.0` and `realworld_tos_action.mkv` @ `00:07:18.0`, both derived from `tears_of_steel_1080p.mov`.
 
 ## Baseline
 
-- Baseline global summary: SSIM `0.962433`, PSNR `26.4697`, average video bytes ratio `0.969394`, composite `0.920007`.
-- The baseline is recorded in `results.tsv`.
+- Expanded 6-clip baseline summary: SSIM `0.974218`, PSNR `33.3706`, average video bytes ratio `0.964131`, composite `0.938091`.
+- This expanded baseline supersedes the earlier synthetic-only baseline for future experiments.

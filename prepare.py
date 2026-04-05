@@ -33,6 +33,11 @@ from projectlib import (
 
 REAL_WORLD_SOURCES = [
     {
+        "name": "tears_of_steel",
+        "url": "https://download.blender.org/demo/movies/ToS/tears_of_steel_1080p.mov",
+        "license_note": "Blender Foundation Tears of Steel sample, CC BY 3.0.",
+    },
+    {
         "name": "sintel",
         "url": "https://download.blender.org/durian/trailer/sintel_trailer-1080p.mp4",
         "license_note": "Blender Foundation Sintel trailer, CC BY 3.0.",
@@ -42,6 +47,16 @@ REAL_WORLD_SOURCES = [
         "url": "https://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_1080p_h264.mov",
         "license_note": "Blender Foundation Big Buck Bunny sample, CC BY 3.0.",
     },
+]
+
+LOCAL_REAL_WORLD_CANDIDATES = [
+    Path("~/Downloads/tears_of_steel_1080p.mov"),
+    Path("~/Downloads/Tears_of_Steel_1080p.mov"),
+]
+
+REAL_WORLD_CLIP_SPECS = [
+    ("realworld_tos_dialogue.mkv", "00:02:10.0"),
+    ("realworld_tos_action.mkv", "00:07:18.0"),
 ]
 
 
@@ -168,23 +183,28 @@ def download_real_world_source(download_dir: Path) -> tuple[Path | None, str]:
                 with urllib.request.urlopen(source["url"], timeout=30) as response:
                     destination.write_bytes(response.read())
             except Exception:
+                if source["name"] == "tears_of_steel":
+                    for candidate in LOCAL_REAL_WORLD_CANDIDATES:
+                        if candidate.exists() and candidate.stat().st_size > 0:
+                            if candidate.resolve() != destination.resolve():
+                                candidate.rename(destination)
+                            return (
+                                destination,
+                                "Blender Foundation Tears of Steel sample, CC BY 3.0. Official fetch failed, so setup fell back to a local download.",
+                            )
                 continue
         if destination.exists() and destination.stat().st_size > 0:
             return destination, source["license_note"]
     return None, "No real-world clip downloaded. Network fetch failed."
 
 
-def make_real_world_clip(output_path: Path) -> str:
-    download_dir = TEST_CLIPS_DIR / "_downloads"
-    source_path, note = download_real_world_source(download_dir)
-    if source_path is None:
-        return note
+def make_real_world_clip(output_path: Path, source_path: Path, start_time: str) -> None:
     run(
         [
             "ffmpeg",
             "-y",
             "-ss",
-            "00:00:05.0",
+            start_time,
             "-t",
             "2.0",
             "-i",
@@ -196,7 +216,20 @@ def make_real_world_clip(output_path: Path) -> str:
             str(output_path),
         ]
     )
-    return note
+
+
+def generate_real_world_clips() -> str:
+    download_dir = TEST_CLIPS_DIR / "_downloads"
+    source_path, note = download_real_world_source(download_dir)
+    if source_path is None:
+        return note
+    created = []
+    for filename, start_time in REAL_WORLD_CLIP_SPECS:
+        output_path = TEST_CLIPS_DIR / filename
+        if not output_path.exists():
+            make_real_world_clip(output_path, source_path, start_time)
+        created.append(f"{filename} @ {start_time}")
+    return f"{note} Generated clips from {source_path.name}: " + ", ".join(created) + "."
 
 
 def generate_test_clips() -> str:
@@ -210,10 +243,7 @@ def generate_test_clips() -> str:
         output_path = TEST_CLIPS_DIR / filename
         if not output_path.exists():
             builder(output_path)
-    real_world_output = TEST_CLIPS_DIR / "realworld.mkv"
-    if real_world_output.exists():
-        return "Real-world clip already present."
-    return make_real_world_clip(real_world_output)
+    return generate_real_world_clips()
 
 
 def generate_reference_encodes() -> None:
@@ -246,18 +276,28 @@ def initialize_results_tsv() -> None:
 
 
 def write_source_notes(real_world_note: str) -> None:
-    notes = {
-        "verified_layout": [
-            "Phase 1 patch target is libavcodec/proresenc_kostya_common.c.",
-            "Current FFmpeg n8.1 stores prores_quant_matrices, prores_mb_limits, and prores_profile_info in that file.",
-            "Proxy already has a separate chroma matrix.",
-            "bits_per_mb and mbs_per_slice are runtime options in proresenc_kostya.c and remain runtime knobs here.",
-            "The ProRes scan/codebook tables live in libavcodec/proresdata.c and are excluded from phase 1 search.",
-            "Current 4444XQ still points at QUANT_MAT_HQ in upstream n8.1, matching source rather than the older draft assumption.",
-        ],
-        "real_world_clip": real_world_note,
-    }
-    write_text(META_DIR / "source_notes.md", "# Source Notes\n\n" + json.dumps(notes, indent=2) + "\n")
+    content = "\n".join(
+        [
+            "# Source Notes",
+            "",
+            "## Verified Upstream Layout",
+            "",
+            "- Phase 1 patch target is `libavcodec/proresenc_kostya_common.c`.",
+            "- FFmpeg `n8.1` stores `prores_quant_matrices`, `prores_mb_limits`, and `prores_profile_info` in that file.",
+            "- Proxy already has a separate chroma matrix in current upstream.",
+            "- `bits_per_mb` and `mbs_per_slice` are runtime options in `libavcodec/proresenc_kostya.c`, so this harness keeps them as runtime knobs.",
+            "- The scan and entropy codebook tables live in `libavcodec/proresdata.c` and are intentionally out of scope for phase 1.",
+            "- Current `4444XQ` still points at `QUANT_MAT_HQ` in upstream `n8.1`, so the setup follows source truth rather than the older draft assumption.",
+            "",
+            "## Test Material",
+            "",
+            "- The harness uses FFV1-in-Matroska mezzanine clips because the preferred Y4M path was not reliable with Homebrew FFmpeg for 10-bit 4:2:2 round-tripping.",
+            "- Synthetic clips: `bars`, `detail`, `gradient`, and `motion`.",
+            f"- Real-world clips: {real_world_note}",
+            "",
+        ]
+    )
+    write_text(META_DIR / "source_notes.md", content)
 
 
 def main() -> None:
