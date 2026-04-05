@@ -116,7 +116,7 @@ SEARCH_TUNING = {
     "luma_error_weight_percent": 100,
     "chroma_error_weight_percent": 100,
     "overquant_penalty": 0,
-    "ac_deadzone_percent": 0,
+    "ac_deadzone_percent": 5,
 }
 
 RUNTIME_DEFAULTS = {
