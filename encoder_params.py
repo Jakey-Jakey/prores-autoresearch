@@ -107,7 +107,7 @@ PROFILES = {
 
 CHROMA_QUANT_SCALE = {
     "proxy": 100,
-    "lt": 120,
+    "lt": 130,
     "standard": 100,
     "hq": 100,
 }
