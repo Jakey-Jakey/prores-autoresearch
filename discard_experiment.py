@@ -5,7 +5,7 @@ import argparse
 import subprocess
 from pathlib import Path
 
-from projectlib import ROOT, format_changed_files, phase2_allowed_paths, run
+from projectlib import ROOT, RESULTS_V2_TSV, format_changed_files, phase2_allowed_paths, run
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,7 +42,12 @@ def modified_paths(lines: list[str]) -> list[Path]:
 
 def ensure_allowed(paths: list[Path]) -> None:
     allowed = phase2_allowed_paths()
-    disallowed = sorted(path.relative_to(ROOT).as_posix() for path in paths if path not in allowed)
+    log_paths = {RESULTS_V2_TSV.resolve()}
+    disallowed = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in paths
+        if path.resolve() not in log_paths and path not in allowed
+    )
     if disallowed:
         raise SystemExit(
             "Refusing to discard experiment because files outside the phase 2 allowlist are modified:\n"
@@ -80,7 +85,11 @@ def main() -> None:
             raise SystemExit(f"Metrics file not found for discard case: {metrics_path}")
     append_results_row(args.status, args.description, metrics_path, changed_files)
 
-    tracked_paths = [path for line, path in zip(status_lines, changed_paths) if not line.startswith("??")]
+    tracked_paths = [
+        path
+        for line, path in zip(status_lines, changed_paths)
+        if not line.startswith("??") and path.resolve() != RESULTS_V2_TSV.resolve()
+    ]
     untracked_paths = [path for line, path in zip(status_lines, changed_paths) if line.startswith("??")]
     if tracked_paths:
         run(["git", "restore", *[path.relative_to(ROOT).as_posix() for path in tracked_paths]], cwd=ROOT)

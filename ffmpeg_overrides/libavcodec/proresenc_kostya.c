@@ -95,6 +95,22 @@ static int prores_profile_steep_trigger_divisor(const ProresContext *ctx)
     return 16;
 }
 
+static int prores_profile_rate_penalty_bits(const ProresContext *ctx)
+{
+    if (ctx->profile == PRORES_PROFILE_PROXY)
+        return 24;
+    if (ctx->profile == PRORES_PROFILE_LT)
+        return 40;
+    if (ctx->profile == PRORES_PROFILE_STANDARD)
+        return 44;
+    return prores_auto_rate_penalty_bits;
+}
+
+static int prores_profile_row_midpoint_floor(const ProresContext *ctx)
+{
+    return 0;
+}
+
 typedef struct ProresThreadData {
     DECLARE_ALIGNED(16, int16_t, blocks)[MAX_PLANES][64 * 4 * MAX_MBS_PER_SLICE];
     DECLARE_ALIGNED(16, uint16_t, emu_buf)[16 * 16];
@@ -767,7 +783,7 @@ static int find_slice_quant(AVCodecContext *avctx,
             bits  = td->nodes[prev].bits + slice_bits[q];
             error = slice_score[q];
             if (error < SCORE_LIMIT)
-                error += slice_bits[q] / prores_auto_rate_penalty_bits;
+                error += slice_bits[q] / prores_profile_rate_penalty_bits(ctx);
             if (error < SCORE_LIMIT) {
                 budget_penalty_bits = prores_profile_budget_penalty_bits(ctx);
                 headroom_divisor = prores_profile_budget_headroom_divisor(ctx);

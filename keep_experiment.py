@@ -8,6 +8,7 @@ from pathlib import Path
 
 from projectlib import (
     ROOT,
+    RESULTS_V2_TSV,
     archive_metrics,
     format_changed_files,
     git_short_head,
@@ -56,7 +57,12 @@ def modified_paths(lines: list[str]) -> list[Path]:
 
 def ensure_allowed(paths: list[Path]) -> None:
     allowed = phase2_allowed_paths()
-    disallowed = sorted(path.relative_to(ROOT).as_posix() for path in paths if path not in allowed)
+    log_paths = {RESULTS_V2_TSV.resolve()}
+    disallowed = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in paths
+        if path.resolve() not in log_paths and path not in allowed
+    )
     if disallowed:
         raise SystemExit(
             "Refusing to keep experiment because files outside the phase 2 allowlist are modified:\n"

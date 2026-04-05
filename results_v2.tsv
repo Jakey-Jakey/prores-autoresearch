@@ -75,3 +75,5 @@ a190703	2026-04-05T19:08:48.808583+00:00	proxy_earlier_second_slope_under_deeper
 d1f211a	2026-04-05T19:09:47.072252+00:00	lt_extra_reserve_above_standard	phase2_v1	0.958269	0.907089	0.948033	0.974386	0.993325	0.994248	1.356725	ffmpeg_overrides/libavcodec/proresenc_kostya.c	keep
 94ff6f5	2026-04-05T19:10:48.920785+00:00	lt_two_slice_reserve	phase2_v1	0.958431	0.907991	0.948343	0.974383	0.991253	0.994243	1.352400	ffmpeg_overrides/libavcodec/proresenc_kostya.c	keep
 94ff6f5	2026-04-05T19:11:44.196938+00:00	standard_extra_reserve_above_current_stack	phase2_v1	0.957859	0.909111	0.948109	0.974378	0.989239	0.994235	1.346993	ffmpeg_overrides/libavcodec/proresenc_kostya.c	discard
+5ac3071	2026-04-05T22:11:42.021693+00:00	apple_matrix_reset_chroma_scale_too_blunt	phase2_v1	0.955032	0.899405	0.943907	0.975866	1.049469	0.995179	1.399280	encoder_params.py	discard
+5ac3071	2026-04-05T22:18:07.368458+00:00	apple_luma_gated_row_floor_still_too_strong	phase2_v1	0.918047	0.942455	0.922928	0.972704	0.859866	0.993044	1.147320	discard_experiment.py,encoder_params.py,ffmpeg_overrides/libavcodec/proresenc_kostya.c,results_v2.tsv	discard
