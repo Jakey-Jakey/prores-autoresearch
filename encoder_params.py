@@ -114,7 +114,7 @@ CHROMA_QUANT_SCALE = {
 
 SEARCH_TUNING = {
     "luma_error_weight_percent": 100,
-    "chroma_error_weight_percent": 100,
+    "chroma_error_weight_percent": 120,
     "overquant_penalty": 0,
     "ac_deadzone_percent": 5,
 }
