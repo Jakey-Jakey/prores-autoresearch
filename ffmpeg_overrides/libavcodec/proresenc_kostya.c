@@ -98,7 +98,7 @@ static int prores_profile_steep_trigger_divisor(const ProresContext *ctx)
 static int prores_profile_rate_penalty_bits(const ProresContext *ctx)
 {
     if (ctx->profile == PRORES_PROFILE_PROXY)
-        return 24;
+        return 20;
     if (ctx->profile == PRORES_PROFILE_LT)
         return 40;
     if (ctx->profile == PRORES_PROFILE_STANDARD)
@@ -744,7 +744,7 @@ static int find_slice_quant(AVCodecContext *avctx,
             if (bits > ctx->bits_per_mb * mbs_per_slice)
                 continue;
 
-            overquant_score = error + bits / prores_auto_rate_penalty_bits;
+            overquant_score = error + bits / prores_profile_rate_penalty_bits(ctx);
             if (best_overquant == -1 || overquant_score <= best_overquant_score) {
                 best_overquant = q;
                 best_overquant_bits = bits;
