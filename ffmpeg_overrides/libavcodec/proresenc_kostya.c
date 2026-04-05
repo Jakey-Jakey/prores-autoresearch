@@ -76,7 +76,7 @@ static int prores_profile_budget_penalty_bits(const ProresContext *ctx)
 static int prores_profile_slice_reserve_cap(const ProresContext *ctx, int slice_budget)
 {
     if (ctx->profile == PRORES_PROFILE_LT)
-        return slice_budget * 7 / 4;
+        return slice_budget * 2;
     if (ctx->profile == PRORES_PROFILE_STANDARD)
         return slice_budget * 3 / 2;
     if (ctx->profile == PRORES_PROFILE_PROXY)
