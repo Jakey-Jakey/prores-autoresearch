@@ -63,6 +63,13 @@ static int prores_profile_budget_penalty_bits(const ProresContext *ctx)
     return prores_auto_budget_penalty_bits;
 }
 
+static int prores_profile_slice_reserve_cap(const ProresContext *ctx, int slice_budget)
+{
+    if (ctx->profile == PRORES_PROFILE_LT || ctx->profile == PRORES_PROFILE_STANDARD)
+        return slice_budget * 3 / 4;
+    return slice_budget / 2;
+}
+
 typedef struct ProresThreadData {
     DECLARE_ALIGNED(16, int16_t, blocks)[MAX_PLANES][64 * 4 * MAX_MBS_PER_SLICE];
     DECLARE_ALIGNED(16, uint16_t, emu_buf)[16 * 16];
@@ -727,6 +734,7 @@ static int find_slice_quant(AVCodecContext *avctx,
             int budget_penalty_bits;
             int headroom_divisor;
             int slice_budget;
+            int slice_reserve_cap;
             int steep_penalty_bits;
             int soft_limit;
             cur = trellis_node + q;
@@ -737,10 +745,11 @@ static int find_slice_quant(AVCodecContext *avctx,
             if (error < SCORE_LIMIT) {
                 budget_penalty_bits = prores_profile_budget_penalty_bits(ctx);
                 headroom_divisor = prores_profile_budget_headroom_divisor(ctx);
-                steep_penalty_bits = FFMAX(budget_penalty_bits - 3, 1);
                 slice_budget = ctx->bits_per_mb * mbs_per_slice;
+                slice_reserve_cap = prores_profile_slice_reserve_cap(ctx, slice_budget);
+                steep_penalty_bits = FFMAX(budget_penalty_bits - 3, 1);
                 remaining_budget = (ctx->mb_width - mbs) * ctx->bits_per_mb;
-                soft_limit = bits_limit - FFMIN(slice_budget / 2,
+                soft_limit = bits_limit - FFMIN(slice_reserve_cap,
                                                 remaining_budget / headroom_divisor);
                 if (bits > soft_limit) {
                     error += (bits - soft_limit) / budget_penalty_bits;
