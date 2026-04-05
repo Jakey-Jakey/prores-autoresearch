@@ -109,7 +109,7 @@ CHROMA_QUANT_SCALE = {
     "proxy": 110,
     "lt": 130,
     "standard": 120,
-    "hq": 100,
+    "hq": 105,
 }
 
 SEARCH_TUNING = {
