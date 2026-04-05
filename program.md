@@ -46,9 +46,13 @@ Prioritize changes in this order:
 
 1. per-profile luma/chroma matrices
 2. per-profile `br_tab`
-3. per-profile `min_quant` and `max_quant`
-4. `PRORES_MB_LIMITS`
-5. `RUNTIME_DEFAULTS["bits_per_mb_override"]`
+3. per-profile `CHROMA_QUANT_SCALE`
+4. `SEARCH_TUNING["luma_error_weight_percent"]` and `SEARCH_TUNING["chroma_error_weight_percent"]`
+5. `SEARCH_TUNING["overquant_penalty"]`
+6. `SEARCH_TUNING["ac_deadzone_percent"]`
+7. per-profile `min_quant` and `max_quant`
+8. `PRORES_MB_LIMITS`
+9. `RUNTIME_DEFAULTS["bits_per_mb_override"]`
 
 `RUNTIME_DEFAULTS["mbs_per_slice"]` is also in scope, but change it carefully because it affects all cases at once.
 

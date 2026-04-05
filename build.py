@@ -9,6 +9,7 @@ from projectlib import (
     FFMPEG_SOURCE_DIR,
     candidate_paths,
     load_encoder_params,
+    patch_kostya_source,
     parse_source_baseline,
     patch_common_source,
     run,
@@ -40,6 +41,9 @@ def patch_sources() -> None:
     baseline = parse_source_baseline(base_text)
     patched_text = patch_common_source(base_text, params, baseline)
     paths["common"].write_text(patched_text, encoding="utf-8")
+    kostya_base_text = paths["kostya_orig"].read_text(encoding="utf-8")
+    patched_kostya_text = patch_kostya_source(kostya_base_text, params)
+    paths["kostya"].write_text(patched_kostya_text, encoding="utf-8")
 
 
 def ensure_configure() -> None:

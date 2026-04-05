@@ -47,6 +47,13 @@ PROFILE_QUANT_ENUMS = {
     "standard": ("QUANT_MAT_STANDARD", "QUANT_MAT_STANDARD"),
     "hq": ("QUANT_MAT_HQ", "QUANT_MAT_HQ"),
 }
+SEARCH_TUNING_DEFAULTS = {
+    "luma_error_weight_percent": 100,
+    "chroma_error_weight_percent": 100,
+    "overquant_penalty": 0,
+    "ac_deadzone_percent": 0,
+}
+CHROMA_QUANT_SCALE_DEFAULTS = {profile: 100 for profile in PHASE1_PROFILES}
 
 MATRIX_LABELS = [
     "proxy",
@@ -149,10 +156,20 @@ def load_encoder_params() -> dict[str, Any]:
         raise RuntimeError(f"Unable to import {ENCODER_PARAMS_PATH}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    search_tuning = dict(SEARCH_TUNING_DEFAULTS)
+    module_search_tuning = getattr(module, "SEARCH_TUNING", None)
+    if module_search_tuning is not None:
+        search_tuning.update(module_search_tuning)
+    chroma_quant_scale = dict(CHROMA_QUANT_SCALE_DEFAULTS)
+    module_chroma_quant_scale = getattr(module, "CHROMA_QUANT_SCALE", None)
+    if module_chroma_quant_scale is not None:
+        chroma_quant_scale.update(module_chroma_quant_scale)
     return {
         "PARAM_VERSION": getattr(module, "PARAM_VERSION"),
         "PRORES_MB_LIMITS": getattr(module, "PRORES_MB_LIMITS"),
         "PROFILES": getattr(module, "PROFILES"),
+        "CHROMA_QUANT_SCALE": chroma_quant_scale,
+        "SEARCH_TUNING": search_tuning,
         "RUNTIME_DEFAULTS": getattr(module, "RUNTIME_DEFAULTS"),
     }
 
@@ -181,6 +198,26 @@ def validate_params(data: dict[str, Any]) -> None:
         br_tab = config.get("br_tab")
         if not isinstance(br_tab, list) or len(br_tab) != 4 or any(not isinstance(v, int) for v in br_tab):
             raise ValueError(f"{name}.br_tab must be a 4-element integer list")
+    chroma_quant_scale = data.get("CHROMA_QUANT_SCALE")
+    if not isinstance(chroma_quant_scale, dict) or list(chroma_quant_scale.keys()) != PHASE1_PROFILES:
+        raise ValueError(f"CHROMA_QUANT_SCALE must contain exactly {PHASE1_PROFILES} in order")
+    for name, value in chroma_quant_scale.items():
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError(f"CHROMA_QUANT_SCALE['{name}'] must be a positive integer percentage")
+    search_tuning = data.get("SEARCH_TUNING")
+    if not isinstance(search_tuning, dict):
+        raise ValueError("SEARCH_TUNING must be a dictionary")
+    expected_search_keys = list(SEARCH_TUNING_DEFAULTS.keys())
+    if list(search_tuning.keys()) != expected_search_keys:
+        raise ValueError(f"SEARCH_TUNING must contain exactly {expected_search_keys} in order")
+    for key in ["luma_error_weight_percent", "chroma_error_weight_percent"]:
+        value = search_tuning.get(key)
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError(f"SEARCH_TUNING['{key}'] must be a positive integer percentage")
+    for key in ["overquant_penalty", "ac_deadzone_percent"]:
+        value = search_tuning.get(key)
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(f"SEARCH_TUNING['{key}'] must be a non-negative integer")
     runtime_defaults = data.get("RUNTIME_DEFAULTS")
     mbs_per_slice = runtime_defaults.get("mbs_per_slice")
     if mbs_per_slice not in {1, 2, 4, 8}:
@@ -333,6 +370,8 @@ def parse_source_baseline(common_c_text: str) -> dict[str, Any]:
             "PARAM_VERSION": 1,
             "PRORES_MB_LIMITS": _ints_from_text(mb_limits_block),
             "PROFILES": baseline_profiles,
+            "CHROMA_QUANT_SCALE": dict(CHROMA_QUANT_SCALE_DEFAULTS),
+            "SEARCH_TUNING": dict(SEARCH_TUNING_DEFAULTS),
             "RUNTIME_DEFAULTS": {
                 "mbs_per_slice": 8,
                 "bits_per_mb_override": None,
@@ -376,6 +415,24 @@ def render_encoder_params(data: dict[str, Any]) -> str:
                 "    },",
             ]
         )
+    lines.extend(
+        [
+            "}",
+            "",
+            "CHROMA_QUANT_SCALE = {",
+        ]
+    )
+    for profile_name in PHASE1_PROFILES:
+        lines.append(f'    "{profile_name}": {data["CHROMA_QUANT_SCALE"][profile_name]},')
+    lines.extend(
+        [
+            "}",
+            "",
+            "SEARCH_TUNING = {",
+        ]
+    )
+    for key in SEARCH_TUNING_DEFAULTS:
+        lines.append(f'    "{key}": {data["SEARCH_TUNING"][key]},')
     lines.extend(
         [
             "}",
@@ -437,6 +494,86 @@ def _render_c_profiles(params: dict[str, Any], base_profiles: list[dict[str, Any
     return ",\n".join(rendered)
 
 
+def _replace_once(text: str, old: str, new: str, label: str) -> str:
+    if old not in text:
+        raise ValueError(f"Unable to find patch target for {label}")
+    return text.replace(old, new, 1)
+
+
+def _render_c_phase1_array(name: str, values: list[int]) -> str:
+    return (
+        f"static const int {name}[6] = {{\n"
+        f"    {', '.join(str(value) for value in values)},\n"
+        "};"
+    )
+
+
+def _common_tuning_block(params: dict[str, Any]) -> str:
+    chroma_scale_values = [params["CHROMA_QUANT_SCALE"][profile] for profile in PHASE1_PROFILES] + [100, 100]
+    lines = [
+        _render_c_phase1_array("prores_auto_chroma_quant_scale_percent", chroma_scale_values),
+        "",
+        "static int prores_scale_quant(int value, int percent)",
+        "{",
+        "    int scaled = (value * percent + 50) / 100;",
+        "",
+        "    return FFMAX(scaled, 1);",
+        "}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _kostya_tuning_block(params: dict[str, Any]) -> str:
+    chroma_scale_values = [params["CHROMA_QUANT_SCALE"][profile] for profile in PHASE1_PROFILES] + [100, 100]
+    tuning = params["SEARCH_TUNING"]
+    lines = [
+        _render_c_phase1_array("prores_auto_chroma_quant_scale_percent", chroma_scale_values),
+        f"static const int prores_auto_luma_error_weight_percent = {tuning['luma_error_weight_percent']};",
+        f"static const int prores_auto_chroma_error_weight_percent = {tuning['chroma_error_weight_percent']};",
+        f"static const int prores_auto_overquant_penalty = {tuning['overquant_penalty']};",
+        f"static const int prores_auto_ac_deadzone_percent = {tuning['ac_deadzone_percent']};",
+        "",
+        "static int prores_scale_quant(int value, int percent)",
+        "{",
+        "    int scaled = (value * percent + 50) / 100;",
+        "",
+        "    return FFMAX(scaled, 1);",
+        "}",
+        "",
+        "static int prores_scale_error(int error, int percent)",
+        "{",
+        "    return (error * percent + 50) / 100;",
+        "}",
+        "",
+        "static int prores_ac_threshold(int q)",
+        "{",
+        "    return (q * prores_auto_ac_deadzone_percent + 99) / 100;",
+        "}",
+        "",
+        "static int prores_quantize_ac(int coeff, int q)",
+        "{",
+        "    int abs_coeff = FFABS(coeff);",
+        "",
+        "    if (abs_coeff <= prores_ac_threshold(q))",
+        "        return 0;",
+        "    return coeff / q;",
+        "}",
+        "",
+        "static int prores_estimate_ac_error(int coeff, int q)",
+        "{",
+        "    int abs_coeff = FFABS(coeff);",
+        "    int threshold = prores_ac_threshold(q);",
+        "",
+        "    if (abs_coeff <= threshold)",
+        "        return abs_coeff;",
+        "    return (abs_coeff - threshold) % q;",
+        "}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def patch_common_source(base_text: str, params: dict[str, Any], baseline: dict[str, Any]) -> str:
     validate_params(params)
 
@@ -488,6 +625,91 @@ def patch_common_source(base_text: str, params: dict[str, Any], baseline: dict[s
         updated,
         count=1,
         flags=re.DOTALL,
+    )
+    updated = _replace_once(
+        updated,
+        '#include "proresenc_kostya_common.h"\n\n',
+        '#include "proresenc_kostya_common.h"\n\n' + _common_tuning_block(params),
+        "common tuning block",
+    )
+    updated = _replace_once(
+        updated,
+        "                ctx->quants[i][j] = ctx->quant_mat[j] * i;\n                ctx->quants_chroma[i][j] = ctx->quant_chroma_mat[j] * i;\n",
+        "                ctx->quants[i][j] = ctx->quant_mat[j] * i;\n"
+        "                ctx->quants_chroma[i][j] = prores_scale_quant(ctx->quant_chroma_mat[j] * i,\n"
+        "                                                              prores_auto_chroma_quant_scale_percent[ctx->profile]);\n",
+        "common precomputed chroma quants",
+    )
+    updated = _replace_once(
+        updated,
+        "            ctx->quants[0][j] = ctx->quant_mat[j] * ctx->force_quant;\n            ctx->quants_chroma[0][j] = ctx->quant_chroma_mat[j] * ctx->force_quant;\n",
+        "            ctx->quants[0][j] = ctx->quant_mat[j] * ctx->force_quant;\n"
+        "            ctx->quants_chroma[0][j] = prores_scale_quant(ctx->quant_chroma_mat[j] * ctx->force_quant,\n"
+        "                                                          prores_auto_chroma_quant_scale_percent[ctx->profile]);\n",
+        "common forced chroma quants",
+    )
+    return updated
+
+
+def patch_kostya_source(base_text: str, params: dict[str, Any]) -> str:
+    validate_params(params)
+    updated = _replace_once(
+        base_text,
+        "#define TRELLIS_WIDTH 16\n#define SCORE_LIMIT   INT_MAX / 2\n\n",
+        "#define TRELLIS_WIDTH 16\n#define SCORE_LIMIT   INT_MAX / 2\n\n" + _kostya_tuning_block(params),
+        "kostya tuning block",
+    )
+    updated = _replace_once(
+        updated,
+        "            level = blocks[idx] / qmat[scan[i]];\n",
+        "            level = prores_quantize_ac(blocks[idx], qmat[scan[i]]);\n",
+        "encode ac quantizer",
+    )
+    updated = _replace_once(
+        updated,
+        "            level   = blocks[idx] / qmat[scan[i]];\n            *error += FFABS(blocks[idx]) % qmat[scan[i]];\n",
+        "            level   = prores_quantize_ac(blocks[idx], qmat[scan[i]]);\n"
+        "            *error += prores_estimate_ac_error(blocks[idx], qmat[scan[i]]);\n",
+        "estimate ac quantizer",
+    )
+    updated = _replace_once(
+        updated,
+        "    int blocks_per_slice;\n    int bits;\n\n    blocks_per_slice = mbs_per_slice * blocks_per_mb;\n\n    bits  = estimate_dcs(error, td->blocks[plane], blocks_per_slice, qmat[0]);\n    bits += estimate_acs(error, td->blocks[plane], blocks_per_slice, ctx->scantable, qmat);\n\n    return FFALIGN(bits, 8);\n",
+        "    int blocks_per_slice;\n    int bits;\n    int plane_error = 0;\n    int error_weight = plane == 0\n"
+        "                       ? prores_auto_luma_error_weight_percent\n"
+        "                       : prores_auto_chroma_error_weight_percent;\n\n"
+        "    blocks_per_slice = mbs_per_slice * blocks_per_mb;\n\n"
+        "    bits  = estimate_dcs(&plane_error, td->blocks[plane], blocks_per_slice, qmat[0]);\n"
+        "    bits += estimate_acs(&plane_error, td->blocks[plane], blocks_per_slice, ctx->scantable, qmat);\n"
+        "    *error += prores_scale_error(plane_error, error_weight);\n\n"
+        "    return FFALIGN(bits, 8);\n",
+        "estimate slice plane weighting",
+    )
+    updated = _replace_once(
+        updated,
+        "        for (i = 0; i < 64; i++) {\n            qmat[i] = ctx->quant_mat[i] * quant;\n            qmat_chroma[i] = ctx->quant_chroma_mat[i] * quant;\n        }\n",
+        "        for (i = 0; i < 64; i++) {\n            qmat[i] = ctx->quant_mat[i] * quant;\n"
+        "            qmat_chroma[i] = prores_scale_quant(ctx->quant_chroma_mat[i] * quant,\n"
+        "                                               prores_auto_chroma_quant_scale_percent[ctx->profile]);\n"
+        "        }\n",
+        "encode slice custom chroma quant",
+    )
+    updated = _replace_once(
+        updated,
+        "                for (i = 0; i < 64; i++) {\n                    qmat[i] = ctx->quant_mat[i] * q;\n                    qmat_chroma[i] = ctx->quant_chroma_mat[i] * q;\n                }\n",
+        "                for (i = 0; i < 64; i++) {\n                    qmat[i] = ctx->quant_mat[i] * q;\n"
+        "                    qmat_chroma[i] = prores_scale_quant(ctx->quant_chroma_mat[i] * q,\n"
+        "                                                       prores_auto_chroma_quant_scale_percent[ctx->profile]);\n"
+        "                }\n",
+        "find slice custom chroma quant",
+    )
+    updated = _replace_once(
+        updated,
+        "        slice_bits[max_quant + 1]  = bits;\n        slice_score[max_quant + 1] = error;\n        overquant = q;\n",
+        "        slice_bits[max_quant + 1]  = bits;\n"
+        "        slice_score[max_quant + 1] = error + prores_auto_overquant_penalty * FFMAX(q - max_quant, 0);\n"
+        "        overquant = q;\n",
+        "overquant penalty",
     )
     return updated
 
