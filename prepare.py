@@ -49,12 +49,27 @@ REAL_WORLD_SOURCES = [
     },
 ]
 
-LOCAL_REAL_WORLD_CANDIDATES = [
-    Path("~/Downloads/tears_of_steel_1080p.mov"),
-    Path("~/Downloads/Tears_of_Steel_1080p.mov"),
-    Path("../prores-autoresearch/test_clips/_downloads/tears_of_steel_1080p.mov"),
-    Path("../prores-autoresearch-agent/test_clips/_downloads/tears_of_steel_1080p.mov"),
-]
+def local_real_world_candidates() -> list[Path]:
+    downloads_dir = Path.home() / "Downloads"
+    candidates = [
+        downloads_dir / "tears_of_steel_1080p.mov",
+        downloads_dir / "Tears_of_Steel_1080p.mov",
+    ]
+    workspace_parent = TEST_CLIPS_DIR.parent.parent
+    for sibling_name in [
+        "prores-autoresearch",
+        "prores-autoresearch-agent",
+        "prores-autoresearch-phase2",
+    ]:
+        candidates.append(workspace_parent / sibling_name / "test_clips" / "_downloads" / "tears_of_steel_1080p.mov")
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        deduped.append(candidate)
+    return deduped
 
 REAL_WORLD_CLIP_SPECS = [
     ("realworld_tos_dialogue.mkv", "00:02:10.0"),
@@ -201,7 +216,7 @@ def download_real_world_source(download_dir: Path) -> tuple[Path | None, str]:
                     destination.write_bytes(response.read())
             except Exception:
                 if source["name"] == "tears_of_steel":
-                    for candidate in LOCAL_REAL_WORLD_CANDIDATES:
+                    for candidate in local_real_world_candidates():
                         if candidate.exists() and candidate.stat().st_size > 0:
                             if candidate.resolve() != destination.resolve():
                                 candidate.rename(destination)

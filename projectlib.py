@@ -832,7 +832,7 @@ def write_environment_json() -> None:
         }[command]
         result = run(version_args, check=True)
         env["commands"][command] = {
-            "path": resolved,
+            "resolved_name": Path(resolved).name,
             "version": (result.stdout or result.stderr).splitlines()[0],
         }
     write_text(META_DIR / "environment.json", json.dumps(env, indent=2) + "\n")

@@ -7,3 +7,4 @@ reference_encodes/
 results.tsv
 results_v2.tsv
 test_clips/
+meta/environment.json
