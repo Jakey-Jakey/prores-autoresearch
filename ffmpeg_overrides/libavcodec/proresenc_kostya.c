@@ -87,9 +87,9 @@ static int prores_profile_slice_reserve_cap(const ProresContext *ctx, int slice_
 static int prores_profile_steep_trigger_divisor(const ProresContext *ctx)
 {
     if (ctx->profile == PRORES_PROFILE_LT)
-        return 32;
+        return 40;
     if (ctx->profile == PRORES_PROFILE_STANDARD)
-        return 32;
+        return 40;
     return 16;
 }
 
