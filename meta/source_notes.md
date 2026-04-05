@@ -13,10 +13,4 @@
 
 - The harness uses FFV1-in-Matroska mezzanine clips because the preferred Y4M path was not reliable with Homebrew FFmpeg for 10-bit 4:2:2 round-tripping.
 - Synthetic clips: `bars`, `detail`, `gradient`, and `motion`.
-- Real-world clip source policy: prefer the official Blender `Tears of Steel` download and fall back to a local copy only if the fetch fails.
-- Real-world clips: `realworld_tos_dialogue.mkv` @ `00:02:10.0` and `realworld_tos_action.mkv` @ `00:07:18.0`, both derived from `tears_of_steel_1080p.mov`.
-
-## Baseline
-
-- Expanded 6-clip baseline summary: SSIM `0.974218`, PSNR `33.3706`, average video bytes ratio `0.964131`, composite `0.938091`.
-- This expanded baseline supersedes the earlier synthetic-only baseline for future experiments.
+- Real-world clips: Blender Foundation Tears of Steel sample, CC BY 3.0. Generated clips from tears_of_steel_1080p.mov: realworld_tos_dialogue.mkv @ 00:02:10.0, realworld_tos_action.mkv @ 00:07:18.0.

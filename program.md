@@ -11,13 +11,14 @@ Read this file and the project docs before starting experiments.
 
 ## Experiment Loop
 
-1. Inspect the current best rows in `results.tsv`.
+1. Inspect `results.tsv`, treating the latest `baseline` row as the starting point for the campaign and the best `keep` row as the current incumbent after experiments begin.
 2. Make one conceptual change in `encoder_params.py`.
 3. Run `bash run_experiment.sh`.
 4. Read `experiments/current/eval.log` and `experiments/current/metrics.json`.
 5. If `composite_score` improves, keep the edit and commit it.
 6. If it does not improve, restore the mutable file with `git restore encoder_params.py`.
 7. Append a row to `results.tsv` with `python3 append_results.py --description "..." --status keep|discard|crash`.
+   Use `baseline` only when intentionally establishing a new campaign baseline.
 8. Continue.
 
 ## Revert Policy

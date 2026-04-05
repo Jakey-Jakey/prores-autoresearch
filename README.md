@@ -20,3 +20,9 @@ bash run_experiment.sh
 ```
 
 Read `program.md` before starting autonomous experiments.
+
+To append a scored run to `results.tsv`, use:
+
+```bash
+python3 append_results.py --description "..." --status keep
+```
